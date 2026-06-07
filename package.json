@@ -1,0 +1,94 @@
+{
+  "name": "mobtestlab",
+  "version": "1.1.0",
+  "description": "一站式移动端测试工作台",
+  "author": "mahailiang",
+  "main": "electron/main.cjs",
+  "private": true,
+  "type": "module",
+  "build": {
+    "appId": "com.mobtestlab.app",
+    "productName": "MobTestLab",
+    "directories": {
+      "output": "release"
+    },
+    "asar": false,
+    "files": [
+      "dist/**/*",
+      "electron/**/*"
+    ],
+    "extraResources": [
+      {
+        "from": "resources/bin/",
+        "to": "bin/",
+        "filter": [
+          "**/*"
+        ]
+      }
+    ],
+    "mac": {
+      "category": "public.app-category.developer-tools",
+      "target": [
+        {
+          "target": "dmg",
+          "arch": [
+            "arm64"
+          ]
+        }
+      ]
+    },
+    "dmg": {
+      "title": "${productName} ${version}",
+      "artifactName": "${productName}-${version}-mac-${arch}.dmg"
+    }
+  },
+  "scripts": {
+    "dev": "vite",
+    "build": "vue-tsc --noEmit && vite build",
+    "preview": "vite preview",
+    "electron:dev": "concurrently \"vite\" \"wait-on http://localhost:5173 && electron .\"",
+    "electron:build": "vite build && electron-builder"
+  },
+  "dependencies": {
+    "@iconify/vue": "^4.1.2",
+    "@midscene/android": "^1.8.7",
+    "@monaco-editor/loader": "^1.4.0",
+    "@vueuse/core": "^11.3.0",
+    "@yume-chan/adb": "^2.6.0",
+    "@yume-chan/adb-scrcpy": "^2.3.2",
+    "@yume-chan/adb-server-node-tcp": "^2.5.2",
+    "@yume-chan/async": "^4.1.3",
+    "@yume-chan/event": "^2.0.0",
+    "@yume-chan/scrcpy": "^2.3.0",
+    "@yume-chan/scrcpy-decoder-webcodecs": "^2.5.3",
+    "@yume-chan/stream-extra": "^2.5.3",
+    "@yume-chan/struct": "^2.3.2",
+    "class-variance-authority": "^0.7.1",
+    "clsx": "^2.1.1",
+    "echarts": "^5.5.1",
+    "electron-squirrel-startup": "^1.0.1",
+    "element-plus": "^2.8.8",
+    "monaco-editor": "^0.52.0",
+    "pinia": "^2.2.6",
+    "tailwind-merge": "^3.3.1",
+    "vue": "^3.5.13",
+    "vue-echarts": "^7.0.3",
+    "vue-router": "^4.4.5"
+  },
+  "devDependencies": {
+    "@tailwindcss/vite": "^4.0.0",
+    "@types/node": "^22",
+    "@vitejs/plugin-vue": "^5.2.1",
+    "autoprefixer": "^10.4.20",
+    "concurrently": "^9.1.0",
+    "electron": "^33.2.1",
+    "electron-builder": "^25.1.8",
+    "postcss": "^8.5",
+    "tailwindcss": "^4.2.0",
+    "typescript": "^5.7.3",
+    "vite": "^6.0.5",
+    "vite-plugin-singlefile": "^2.3.3",
+    "vue-tsc": "^2.1.10",
+    "wait-on": "^8.0.1"
+  }
+}

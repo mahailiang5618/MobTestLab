@@ -1,0 +1,445 @@
+const { app, BrowserWindow, ipcMain } = require('electron')
+const path = require('path')
+const fs = require('fs')
+const { execSync, spawn } = require('child_process')
+const { getBinPath } = require('./paths.cjs')
+
+const LOG_FILE = path.join(require('os').homedir(), 'mobtestlab-debug.log')
+function log(msg) { fs.appendFileSync(LOG_FILE, `${new Date().toISOString()} ${msg}\n`) }
+log('=== App starting ===')
+
+const { ScrcpyClient } = require('./scrcpy-client.cjs')
+const { AndroidPerfCollector } = require('./android-perf-collector.cjs')
+const { AutomationRunner } = require('./automation-runner.cjs')
+let IosMirrorClient
+try { IosMirrorClient = require('./ios-mirror-client.cjs').IosMirrorClient } catch (e) { log('ios-mirror load error: ' + e.message) }
+
+// Handle creating/removing shortcuts on Windows when installing/uninstalling.
+try { if (require('electron-squirrel-startup')) app.quit() } catch {}
+
+const isDev = !app.isPackaged
+
+let mainWindow
+const mirrorProcesses = new Map()
+const perfCollectors = new Map()
+const automationRunner = new AutomationRunner()
+
+const MOBTESTLAB_DIR = path.join(require('os').homedir(), '.mobtestlab')
+const SCRIPTS_DIR = path.join(MOBTESTLAB_DIR, 'scripts')
+const AI_CONFIG_PATH = path.join(MOBTESTLAB_DIR, 'ai-config.json')
+
+const HDC_PATH = '/Users/mahailiang01/Library/OpenHarmony/Sdk/14/toolchains/hdc'
+
+function getIosDevices() {
+  try {
+    const udids = execSync('idevice_id -l', { encoding: 'utf-8', timeout: 5000 }).trim().split('\n').filter(Boolean)
+    return udids.map(udid => {
+      let name = '', model = '', version = '', battery = 0
+      try { name = execSync(`ideviceinfo -u ${udid} -k DeviceName`, { encoding: 'utf-8', timeout: 3000 }).trim() } catch {}
+      try { model = execSync(`ideviceinfo -u ${udid} -k ProductType`, { encoding: 'utf-8', timeout: 3000 }).trim() } catch {}
+      try { version = execSync(`ideviceinfo -u ${udid} -k ProductVersion`, { encoding: 'utf-8', timeout: 3000 }).trim() } catch {}
+      try {
+        const batOut = execSync(`ideviceinfo -u ${udid} -q com.apple.mobile.battery`, { encoding: 'utf-8', timeout: 3000 })
+        const match = batOut.match(/BatteryCurrentCapacity:\s*(\d+)/)
+        if (match) battery = parseInt(match[1])
+      } catch {}
+      return {
+        id: udid,
+        name: name || model || udid,
+        platform: 'ios',
+        status: 'online',
+        model: model || name,
+        version: version ? `iOS ${version}` : '',
+        resolution: '',
+        cpuArch: '',
+        storage: '',
+        battery,
+        connectionType: 'usb'
+      }
+    })
+  } catch { return [] }
+}
+
+function getHarmonyDevices() {
+  try {
+    const output = execSync(`"${HDC_PATH}" list targets`, { encoding: 'utf-8', timeout: 5000 }).trim()
+    const serials = output.split('\n').filter(s => s.trim() && !s.includes('[Empty]'))
+    return serials.map(serial => {
+      serial = serial.trim()
+      let model = '', version = ''
+      try { model = execSync(`"${HDC_PATH}" -t ${serial} shell param get const.product.model`, { encoding: 'utf-8', timeout: 3000 }).trim() } catch {}
+      try { version = execSync(`"${HDC_PATH}" -t ${serial} shell param get const.product.software.version`, { encoding: 'utf-8', timeout: 3000 }).trim() } catch {}
+      return {
+        id: serial,
+        name: model || serial,
+        platform: 'harmonyos',
+        status: 'online',
+        model: model || serial,
+        version: version || 'HarmonyOS',
+        resolution: '',
+        cpuArch: '',
+        storage: '',
+        battery: 0,
+        connectionType: serial.includes(':') ? 'wifi' : 'usb'
+      }
+    })
+  } catch { return [] }
+}
+
+function getAdbDevices() {
+  try {
+    const output = execSync(`"${getBinPath('adb')}" devices -l`, { encoding: 'utf-8', timeout: 5000 })
+    const lines = output.trim().split('\n').slice(1)
+    return lines
+      .filter(line => line.trim() && !line.startsWith('*'))
+      .map(line => {
+        const parts = line.trim().split(/\s+/)
+        const id = parts[0]
+        const status = parts[1]
+        const props = {}
+        parts.slice(2).forEach(p => {
+          const [k, v] = p.split(':')
+          if (k && v) props[k] = v
+        })
+
+        let model = props.model || props.device || id
+        let version = ''
+        let resolution = ''
+        let cpuArch = ''
+        let storage = ''
+        let battery = 0
+        if (status === 'device') {
+          try {
+            version = execSync(`"${getBinPath('adb')}" -s ${id} shell getprop ro.build.version.release`, { encoding: 'utf-8', timeout: 3000 }).trim()
+          } catch {}
+          try {
+            resolution = execSync(`"${getBinPath('adb')}" -s ${id} shell wm size`, { encoding: 'utf-8', timeout: 3000 }).trim().split(':').pop().trim()
+          } catch {}
+          try {
+            cpuArch = execSync(`"${getBinPath('adb')}" -s ${id} shell getprop ro.product.cpu.abi`, { encoding: 'utf-8', timeout: 3000 }).trim()
+          } catch {}
+          try {
+            const dfOut = execSync(`"${getBinPath('adb')}" -s ${id} shell df /data | tail -1`, { encoding: 'utf-8', timeout: 3000 }).trim()
+            const cols = dfOut.split(/\s+/)
+            if (cols.length >= 2) storage = (parseInt(cols[1]) / 1048576).toFixed(0) + ' GB'
+          } catch {}
+          try {
+            const batOut = execSync(`"${getBinPath('adb')}" -s ${id} shell dumpsys battery | grep level`, { encoding: 'utf-8', timeout: 3000 }).trim()
+            const match = batOut.match(/(\d+)/)
+            if (match) battery = parseInt(match[1])
+          } catch {}
+        }
+
+        return {
+          id,
+          name: model.replace(/_/g, ' '),
+          platform: 'android',
+          status: status === 'device' ? 'online' : status === 'unauthorized' ? 'unauthorized' : 'offline',
+          model: model.replace(/_/g, ' '),
+          version: version ? `Android ${version}` : '',
+          resolution,
+          cpuArch,
+          storage,
+          battery,
+          connectionType: id.includes(':') ? 'wifi' : 'usb',
+          ip: id.includes(':') ? id : undefined
+        }
+      })
+  } catch {
+    return []
+  }
+}
+
+const createWindow = () => {
+  mainWindow = new BrowserWindow({
+    width: 1440,
+    height: 900,
+    minWidth: 1280,
+    minHeight: 720,
+    frame: false,
+    titleBarStyle: 'hiddenInset',
+    webPreferences: {
+      nodeIntegration: false,
+      contextIsolation: true,
+      preload: path.join(__dirname, 'preload.cjs')
+    },
+    backgroundColor: '#0f172a'
+  })
+
+  if (isDev) {
+    mainWindow.loadURL('http://localhost:5173')
+  } else {
+    mainWindow.loadFile(path.join(__dirname, '../dist/index.html'))
+  }
+  mainWindow.webContents.openDevTools()
+
+  mainWindow.webContents.on('did-fail-load', (event, code, desc, url) => {
+    log('did-fail-load: ' + code + ' ' + desc + ' ' + url)
+  })
+
+  // 捕获渲染进程错误
+  mainWindow.webContents.on('render-process-gone', (event, details) => {
+    console.error('[main] Renderer process gone:', details)
+  })
+  mainWindow.webContents.on('console-message', (event, level, message) => {
+    log('[renderer] ' + message)
+  })
+
+  mainWindow.on('close', (e) => {
+    if (!mainWindow.isDestroyed()) {
+      mainWindow.destroy()
+    }
+  })
+
+  ipcMain.on('close-window', () => {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.destroy()
+    }
+  })
+}
+
+async function getAllDevices() {
+  return [...getAdbDevices(), ...getIosDevices(), ...getHarmonyDevices()]
+}
+
+ipcMain.handle('get-devices', () => {
+  return getAllDevices()
+})
+
+ipcMain.handle('start-mirror', async (_event, deviceId, options = {}) => {
+  if (mirrorProcesses.has(deviceId)) {
+    return { success: false, error: '该设备已在投屏中' }
+  }
+
+  let platform = 'android'
+  try {
+    const devices = await getAllDevices()
+    const device = devices.find(d => d.id === deviceId)
+    if (device) platform = device.platform
+  } catch {}
+
+  let client
+  if (platform === 'ios') {
+    client = new IosMirrorClient(deviceId, {
+      maxFps: Math.min(options.frameRate || 8, 10)
+    })
+  } else {
+    const maxSizeMap = { '480p': 480, '720p': 720, '1080p': 1080, original: 0 }
+    const maxSize = maxSizeMap[options.resolution] || 720
+    const bitRateMap = { '480p': 4000000, '720p': 12000000, '1080p': 20000000, original: 32000000 }
+    const bitRate = bitRateMap[options.resolution] || 12000000
+
+    client = new ScrcpyClient(deviceId, {
+      maxSize: maxSize || 720,
+      maxFps: options.frameRate || 30,
+      bitRate
+    })
+  }
+
+  client.on('video-packet', (packet) => {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('mirror-frame', packet)
+    }
+  })
+
+  client.on('stopped', () => {
+    mirrorProcesses.delete(deviceId)
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('mirror-stopped', deviceId)
+    }
+  })
+
+  try {
+    const result = await client.start()
+    mirrorProcesses.set(deviceId, client)
+    return result
+  } catch (err) {
+    return { success: false, error: err.message }
+  }
+})
+
+ipcMain.handle('stop-mirror', (_event, deviceId) => {
+  const client = mirrorProcesses.get(deviceId)
+  if (client) {
+    client.stop()
+    mirrorProcesses.delete(deviceId)
+    return { success: true }
+  }
+  return { success: false, error: '未找到投屏进程' }
+})
+
+ipcMain.on('mirror-touch', (_event, deviceId, action, x, y, width, height) => {
+  const client = mirrorProcesses.get(deviceId)
+  if (client) client.injectTouch(action, x, y, width, height)
+})
+
+ipcMain.on('mirror-scroll', (_event, deviceId, x, y, width, height, scrollX, scrollY) => {
+  const client = mirrorProcesses.get(deviceId)
+  if (client) client.injectScroll(x, y, width, height, scrollX, scrollY)
+})
+
+ipcMain.on('mirror-key', (_event, deviceId, keyCode) => {
+  const client = mirrorProcesses.get(deviceId)
+  if (client) client.injectKeyCode(keyCode)
+})
+
+ipcMain.on('mirror-text', (_event, deviceId, text) => {
+  const client = mirrorProcesses.get(deviceId)
+  if (client) client.injectText(text)
+})
+
+ipcMain.handle('show-save-dialog', (_event, options) => {
+  const { dialog } = require('electron')
+  return dialog.showSaveDialog(mainWindow, options)
+})
+
+ipcMain.handle('start-perf', async (_event, deviceId, appPackage) => {
+  if (perfCollectors.has(deviceId)) {
+    return { success: false, error: '该设备已在采集中' }
+  }
+  try {
+    const collector = new AndroidPerfCollector(deviceId, appPackage)
+    collector.on('data', (metric) => {
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send('perf-data', { deviceId, metric })
+      }
+    })
+    await collector.start()
+    perfCollectors.set(deviceId, collector)
+    return { success: true }
+  } catch (err) {
+    return { success: false, error: err.message }
+  }
+})
+
+ipcMain.handle('stop-perf', (_event, deviceId) => {
+  const collector = perfCollectors.get(deviceId)
+  if (collector) {
+    collector.stop()
+    perfCollectors.delete(deviceId)
+    return { success: true }
+  }
+  return { success: false, error: '未找到采集进程' }
+})
+
+ipcMain.handle('get-installed-apps', async (_event, deviceId) => {
+  if (!deviceId) return []
+  try {
+    const { execFile } = require('child_process')
+    const output = await new Promise((resolve, reject) => {
+      execFile(getBinPath('adb'), ['-s', deviceId, 'shell', 'pm', 'list', 'packages', '-3'], {
+        encoding: 'utf-8', timeout: 8000
+      }, (err, stdout) => err ? reject(err) : resolve(stdout))
+    })
+    return String(output).trim().split('\n')
+      .filter(Boolean)
+      .map(line => {
+        const pkg = line.replace('package:', '').trim()
+        return { name: pkg, package: pkg }
+      })
+  } catch { return [] }
+})
+
+ipcMain.handle('save-file', (_event, filePath, data) => {
+  const fs = require('fs')
+  fs.writeFileSync(filePath, Buffer.from(data))
+  return { success: true }
+})
+
+ipcMain.handle('save-recording-mp4', async (_event, filePath, data) => {
+  const { spawn } = require('child_process')
+  const fs = require('fs')
+  const os = require('os')
+  const path = require('path')
+
+  const tmpPath = path.join(os.tmpdir(), `mobtestlab_recording_${Date.now()}.webm`)
+  fs.writeFileSync(tmpPath, Buffer.from(data))
+
+  return new Promise((resolve) => {
+    const ffmpeg = spawn(getBinPath('ffmpeg'), [
+      '-y', '-i', tmpPath,
+      '-c:v', 'libx264', '-preset', 'fast', '-crf', '23',
+      '-c:a', 'aac', '-b:a', '128k',
+      '-movflags', '+faststart',
+      filePath
+    ])
+    ffmpeg.stderr.on('data', () => {})
+    ffmpeg.on('close', (code) => {
+      fs.unlink(tmpPath, () => {})
+      resolve({ success: code === 0 })
+    })
+    ffmpeg.on('error', () => {
+      fs.unlink(tmpPath, () => {})
+      resolve({ success: false })
+    })
+  })
+})
+
+// Automation
+ipcMain.handle('run-automation', (_event, params) => {
+  log('run-automation called, deviceId: ' + params.deviceId)
+  automationRunner.run(params, (msg) => {
+    log('automation msg: ' + JSON.stringify(msg))
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('automation-log', msg)
+    }
+  })
+  return { success: true }
+})
+
+ipcMain.handle('stop-automation', () => {
+  automationRunner.stop()
+  return { success: true }
+})
+
+ipcMain.handle('get-ai-config', () => {
+  try { return JSON.parse(fs.readFileSync(AI_CONFIG_PATH, 'utf-8')) } catch { return null }
+})
+
+ipcMain.handle('save-ai-config', (_event, config) => {
+  fs.mkdirSync(MOBTESTLAB_DIR, { recursive: true })
+  fs.writeFileSync(AI_CONFIG_PATH, JSON.stringify(config, null, 2))
+  return { success: true }
+})
+
+ipcMain.handle('get-scripts', () => {
+  fs.mkdirSync(SCRIPTS_DIR, { recursive: true })
+  try {
+    return fs.readdirSync(SCRIPTS_DIR).filter(f => f.endsWith('.js')).map(f => ({
+      name: f.replace('.js', ''),
+      content: fs.readFileSync(path.join(SCRIPTS_DIR, f), 'utf-8')
+    }))
+  } catch { return [] }
+})
+
+ipcMain.handle('save-automation-script', (_event, name, content) => {
+  fs.mkdirSync(SCRIPTS_DIR, { recursive: true })
+  fs.writeFileSync(path.join(SCRIPTS_DIR, `${name}.js`), content)
+  return { success: true }
+})
+
+ipcMain.handle('delete-script', (_event, name) => {
+  try { fs.unlinkSync(path.join(SCRIPTS_DIR, `${name}.js`)); return { success: true } } catch { return { success: false } }
+})
+
+app.whenReady().then(() => {
+  log('app ready, isDev: ' + isDev + ', isPackaged: ' + app.isPackaged)
+  createWindow()
+  log('window created')
+
+  app.on('activate', () => {
+    if (BrowserWindow.getAllWindows().length === 0) {
+      createWindow()
+    }
+  })
+})
+
+app.on('window-all-closed', () => {
+  for (const client of mirrorProcesses.values()) {
+    client.stop()
+  }
+  for (const collector of perfCollectors.values()) {
+    collector.stop()
+  }
+  app.quit()
+})
