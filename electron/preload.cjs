@@ -53,5 +53,12 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // File dialog
   showSaveDialog: (options) => ipcRenderer.invoke('show-save-dialog', options),
   saveFile: (filePath, data) => ipcRenderer.invoke('save-file', filePath, data),
-  saveRecordingAsMp4: (filePath, data) => ipcRenderer.invoke('save-recording-mp4', filePath, data)
+  saveRecordingAsMp4: (filePath, data) => ipcRenderer.invoke('save-recording-mp4', filePath, data),
+
+  // File server (QR tools)
+  startFileServer: (filePath) => ipcRenderer.invoke('start-file-server', filePath),
+  stopFileServer: () => ipcRenderer.invoke('stop-file-server'),
+  getLocalIp: () => ipcRenderer.invoke('get-local-ip'),
+  showOpenDialog: (options) => ipcRenderer.invoke('show-open-dialog', options),
+  getMacInfo: () => ipcRenderer.invoke('get-mac-info')
 })

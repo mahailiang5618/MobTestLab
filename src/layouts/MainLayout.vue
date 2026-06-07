@@ -9,10 +9,22 @@
     <div class="flex w-full pt-10">
       <!-- 左侧导航栏 -->
       <aside class="w-20 flex flex-col items-center py-4 border-r border-[hsl(var(--sidebar-border))] bg-[hsl(var(--sidebar))] h-[calc(100vh-40px)]">
-        <!-- Logo -->
-        <div class="w-10 h-10 rounded-xl bg-gradient-to-br from-[hsl(var(--primary))] to-[hsl(var(--primary)/0.7)] flex items-center justify-center mb-8 shadow-lg">
-          <Icon icon="mdi:cellphone-link" class="w-5 h-5 text-white" />
-        </div>
+        <!-- Logo / 仪表盘 -->
+        <router-link to="/dashboard" v-slot="{ isActive }">
+          <button
+            :class="[
+              'w-14 h-14 rounded-xl flex flex-col items-center justify-center gap-1 transition-all mb-8',
+              isActive
+                ? 'bg-[hsl(var(--primary))] text-white shadow-md'
+                : 'text-[hsl(var(--muted-foreground))] hover:bg-[hsl(var(--accent))] hover:text-[hsl(var(--foreground))]'
+            ]"
+          >
+            <Icon icon="mdi:view-dashboard" class="w-5 h-5" />
+            <span class="text-[10px] leading-none">工作台</span>
+          </button>
+        </router-link>
+
+        <div class="w-10 border-t border-[hsl(var(--sidebar-border))] mb-5"></div>
 
         <!-- 主导航 -->
         <nav class="flex-1 flex flex-col items-center gap-3">
@@ -95,7 +107,8 @@ const navItems = [
   { label: '性能', path: '/performance', icon: 'mdi:chart-line' },
   { label: '自动化', path: '/automation', icon: 'mdi:robot' },
   { label: '报告', path: '/reports', icon: 'mdi:file-document-outline' },
-  { label: '助手', path: '/assistant', icon: 'mdi:chat-outline' }
+  { label: '助手', path: '/assistant', icon: 'mdi:chat-outline' },
+  { label: '工具', path: '/tools', icon: 'mdi:toolbox-outline' }
 ]
 </script>
 

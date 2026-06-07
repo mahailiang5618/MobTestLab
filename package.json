@@ -1,6 +1,6 @@
 {
   "name": "mobtestlab",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "description": "一站式移动端测试工作台",
   "author": "mahailiang",
   "main": "electron/main.cjs",
@@ -32,7 +32,8 @@
         {
           "target": "dmg",
           "arch": [
-            "arm64"
+            "arm64",
+            "x64"
           ]
         }
       ]
@@ -70,6 +71,7 @@
     "element-plus": "^2.8.8",
     "monaco-editor": "^0.52.0",
     "pinia": "^2.2.6",
+    "qrcode": "^1.5.4",
     "tailwind-merge": "^3.3.1",
     "vue": "^3.5.13",
     "vue-echarts": "^7.0.3",
@@ -78,6 +80,7 @@
   "devDependencies": {
     "@tailwindcss/vite": "^4.0.0",
     "@types/node": "^22",
+    "@types/qrcode": "^1.5.6",
     "@vitejs/plugin-vue": "^5.2.1",
     "autoprefixer": "^10.4.20",
     "concurrently": "^9.1.0",

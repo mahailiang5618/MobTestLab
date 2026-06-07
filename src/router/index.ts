@@ -6,8 +6,14 @@ const routes: RouteRecordRaw[] = [
     path: '/',
     name: 'Layout',
     component: () => import('@/layouts/MainLayout.vue'),
-    redirect: '/mirror',
+    redirect: '/dashboard',
     children: [
+      {
+        path: 'dashboard',
+        name: 'Dashboard',
+        component: () => import('@/views/DashboardView.vue'),
+        meta: { title: '仪表盘', icon: 'mdi:view-dashboard-outline' }
+      },
       {
         path: 'mirror',
         name: 'Mirror',
@@ -37,6 +43,12 @@ const routes: RouteRecordRaw[] = [
         name: 'Assistant',
         component: () => import('@/views/AssistantView.vue'),
         meta: { title: '助手' }
+      },
+      {
+        path: 'tools',
+        name: 'Tools',
+        component: () => import('@/views/ToolsView.vue'),
+        meta: { title: '工具' }
       }
     ]
   }

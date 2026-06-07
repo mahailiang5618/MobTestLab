@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain } = require('electron')
+const { app, BrowserWindow, ipcMain, Menu } = require('electron')
 const path = require('path')
 const fs = require('fs')
 const { execSync, spawn } = require('child_process')
@@ -8,6 +8,7 @@ const LOG_FILE = path.join(require('os').homedir(), 'mobtestlab-debug.log')
 function log(msg) { fs.appendFileSync(LOG_FILE, `${new Date().toISOString()} ${msg}\n`) }
 log('=== App starting ===')
 
+const { FileServer, getLocalIp } = require('./file-server.cjs')
 const { ScrcpyClient } = require('./scrcpy-client.cjs')
 const { AndroidPerfCollector } = require('./android-perf-collector.cjs')
 const { AutomationRunner } = require('./automation-runner.cjs')
@@ -171,7 +172,7 @@ const createWindow = () => {
   } else {
     mainWindow.loadFile(path.join(__dirname, '../dist/index.html'))
   }
-  mainWindow.webContents.openDevTools()
+  if (isDev) mainWindow.webContents.openDevTools()
 
   mainWindow.webContents.on('did-fail-load', (event, code, desc, url) => {
     log('did-fail-load: ' + code + ' ' + desc + ' ' + url)
@@ -291,6 +292,11 @@ ipcMain.on('mirror-text', (_event, deviceId, text) => {
 ipcMain.handle('show-save-dialog', (_event, options) => {
   const { dialog } = require('electron')
   return dialog.showSaveDialog(mainWindow, options)
+})
+
+ipcMain.handle('show-open-dialog', (_event, options) => {
+  const { dialog } = require('electron')
+  return dialog.showOpenDialog(mainWindow, options)
 })
 
 ipcMain.handle('start-perf', async (_event, deviceId, appPackage) => {
@@ -422,8 +428,104 @@ ipcMain.handle('delete-script', (_event, name) => {
   try { fs.unlinkSync(path.join(SCRIPTS_DIR, `${name}.js`)); return { success: true } } catch { return { success: false } }
 })
 
+// File server for QR tools
+const fileServer = new FileServer()
+
+ipcMain.handle('start-file-server', async (_event, filePath) => {
+  fileServer.stop()
+  return await fileServer.start(filePath)
+})
+
+ipcMain.handle('stop-file-server', () => {
+  fileServer.stop()
+  return { success: true }
+})
+
+ipcMain.handle('get-local-ip', () => {
+  return getLocalIp()
+})
+
+ipcMain.handle('get-mac-info', () => {
+  const os = require('os')
+  const totalMem = (os.totalmem() / 1073741824).toFixed(0)
+  const freeMem = (os.freemem() / 1073741824).toFixed(1)
+
+  let diskTotal = '', diskAvail = ''
+  try {
+    const dfOut = execSync("df -H / | tail -1", { encoding: 'utf-8', timeout: 3000 }).trim()
+    const cols = dfOut.split(/\s+/)
+    diskTotal = cols[1] || ''
+    diskAvail = cols[3] || ''
+  } catch {}
+
+  let battery = '', charging = ''
+  try {
+    const pmOut = execSync("pmset -g batt", { encoding: 'utf-8', timeout: 3000 })
+    const batMatch = pmOut.match(/(\d+)%/)
+    if (batMatch) battery = batMatch[1] + '%'
+    charging = pmOut.includes('AC Power') ? '充电中' : '未充电'
+  } catch {}
+
+  let networkType = '', networkStatus = ''
+  try {
+    const routeOut = execSync("route get default 2>/dev/null | grep interface", { encoding: 'utf-8', timeout: 3000 }).trim()
+    const ifMatch = routeOut.match(/interface:\s*(\w+)/)
+    if (ifMatch) {
+      const dev = ifMatch[1]
+      const ip = execSync(`ipconfig getifaddr ${dev} 2>/dev/null || echo ""`, { encoding: 'utf-8', timeout: 3000 }).trim()
+      networkStatus = ip ? '已连接' : '未连接'
+      const portOut = execSync(`networksetup -listallhardwareports 2>/dev/null | grep -B1 "Device: ${dev}"`, { encoding: 'utf-8', timeout: 3000 }).trim()
+      const portMatch = portOut.match(/Hardware Port:\s*(.+)/)
+      networkType = portMatch ? portMatch[1] : dev
+    }
+  } catch { networkType = '未知'; networkStatus = '未知' }
+
+  let resolution = ''
+  try {
+    const dispOut = execSync("system_profiler SPDisplaysDataType 2>/dev/null | grep Resolution", { encoding: 'utf-8', timeout: 5000 })
+    const resMatch = dispOut.match(/(\d+\s*x\s*\d+)/)
+    if (resMatch) resolution = resMatch[1].replace(/\s/g, '')
+  } catch {}
+
+  const cpus = os.cpus()
+  const cpuModel = cpus.length ? cpus[0].model.replace(/\s+/g, ' ').trim() : ''
+
+  return [
+    { label: '操作系统', icon: 'mdi:apple', value: 'macOS', sub: os.release() },
+    { label: '处理器', icon: 'mdi:chip', value: cpuModel.split(' ').slice(0, 3).join(' '), sub: cpus.length + ' 核心' },
+    { label: '内存', icon: 'mdi:memory', value: totalMem + ' GB', sub: '可用 ' + freeMem + ' GB' },
+    { label: '磁盘', icon: 'mdi:harddisk', value: diskTotal, sub: '可用 ' + diskAvail },
+    { label: '电池', icon: 'mdi:battery-charging', value: battery || '无电池', sub: charging },
+    { label: '网络', icon: 'mdi:wifi', value: networkType, sub: networkStatus },
+    { label: '屏幕', icon: 'mdi:monitor', value: resolution || '未知', sub: os.hostname() }
+  ]
+})
+
 app.whenReady().then(() => {
   log('app ready, isDev: ' + isDev + ', isPackaged: ' + app.isPackaged)
+
+  const menuTemplate = [
+    {
+      label: '编辑',
+      submenu: [
+        { label: '撤销', role: 'undo' },
+        { label: '重做', role: 'redo' },
+        { type: 'separator' },
+        { label: '剪切', role: 'cut' },
+        { label: '复制', role: 'copy' },
+        { label: '粘贴', role: 'paste' },
+        { label: '全选', role: 'selectAll' }
+      ]
+    },
+    {
+      label: '帮助',
+      submenu: [
+        { label: '关于 MobTestLab', role: 'about' }
+      ]
+    }
+  ]
+  Menu.setApplicationMenu(Menu.buildFromTemplate(menuTemplate))
+
   createWindow()
   log('window created')
 
