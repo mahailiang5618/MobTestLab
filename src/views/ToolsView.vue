@@ -149,17 +149,80 @@
           </div>
         </div>
       </div>
+
+      <!-- 安装应用 -->
+      <div v-if="activeTool === 'install-app'" class="flex flex-col h-full p-6 gap-5">
+        <h2 class="text-lg font-semibold">安装应用</h2>
+        <div class="flex flex-col gap-4 max-w-lg">
+          <!-- 设备选择 -->
+          <div class="flex flex-col gap-2">
+            <label class="text-sm font-medium">选择设备</label>
+            <div class="flex gap-2">
+              <el-select v-model="installDeviceId" placeholder="选择已连接设备" class="flex-1" @change="onInstallDeviceChange">
+                <el-option v-for="d in installDevices" :key="d.id" :label="`${d.name} (${d.platform})`" :value="d.id" />
+              </el-select>
+              <el-button @click="refreshInstallDevices">
+                <Icon icon="mdi:refresh" class="w-4 h-4" />
+              </el-button>
+            </div>
+          </div>
+
+          <!-- 来源切换 -->
+          <div class="flex flex-col gap-2">
+            <label class="text-sm font-medium">安装包来源</label>
+            <div class="flex gap-1 p-0.5 bg-[hsl(var(--secondary))] rounded-md w-fit">
+              <button :class="['px-3 py-1 rounded text-xs transition-all', installSource === 'local' ? 'bg-[hsl(var(--card))] shadow-sm font-medium' : 'text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--foreground))]']" @click="installSource = 'local'">本地文件</button>
+              <button :class="['px-3 py-1 rounded text-xs transition-all', installSource === 'url' ? 'bg-[hsl(var(--card))] shadow-sm font-medium' : 'text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--foreground))]']" @click="installSource = 'url'">URL 地址</button>
+            </div>
+          </div>
+
+          <!-- 本地文件选择 -->
+          <div v-if="installSource === 'local'" class="flex flex-col gap-2">
+            <div class="flex items-center gap-2 p-4 rounded-lg border-2 border-dashed border-[hsl(var(--border))] hover:border-[hsl(var(--primary)/0.5)] cursor-pointer transition-all" @click="pickInstallFile">
+              <Icon icon="mdi:file-plus-outline" class="w-6 h-6 text-[hsl(var(--muted-foreground))]" />
+              <span class="text-sm text-[hsl(var(--muted-foreground))]">{{ installFilePath ? installFilePath.split('/').pop() : '点击选择安装包 (.apk / .ipa / .hap)' }}</span>
+            </div>
+          </div>
+
+          <!-- URL 输入 -->
+          <div v-else class="flex flex-col gap-2">
+            <el-input v-model="installUrl" placeholder="输入安装包下载地址" />
+          </div>
+
+          <!-- 安装按钮 -->
+          <el-button type="primary" :disabled="!canInstall || installStatus === 'installing' || installStatus === 'downloading'" @click="doInstall">
+            <Icon icon="mdi:download" class="w-4 h-4 mr-1" />
+            {{ installStatus === 'downloading' ? '下载中...' : installStatus === 'installing' ? '安装中...' : '安装' }}
+          </el-button>
+
+          <!-- 进度/状态 -->
+          <div v-if="installStatus" class="p-3 rounded-lg" :class="installStatus === 'success' ? 'bg-green-500/10 border border-green-500/20' : installStatus === 'error' ? 'bg-red-500/10 border border-red-500/20' : 'bg-[hsl(var(--secondary))]'">
+            <div class="flex items-center gap-2">
+              <Icon :icon="installStatusIcon" class="w-4 h-4" :class="[installStatusColor, (installStatus === 'downloading' || installStatus === 'installing') ? 'animate-spin' : '']" />
+              <span class="text-sm" :class="installStatusColor">{{ installMessage }}</span>
+            </div>
+            <el-progress v-if="(installStatus === 'downloading' || installStatus === 'installing')" :percentage="installPercent" :stroke-width="4" :show-text="false" class="mt-2" :indeterminate="installStatus === 'installing'" />
+          </div>
+        </div>
+      </div>
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, watch, onUnmounted } from 'vue'
+import { ref, watch, computed, onMounted, onUnmounted } from 'vue'
 import { Icon } from '@iconify/vue'
 import QRCode from 'qrcode'
+import { useDeviceStore } from '@/stores/device'
+
+const api = (window as any).electronAPI
+const deviceStore = useDeviceStore()
 
 const activeTool = ref('qrcode')
-const tools = [{ id: 'qrcode', label: '二维码生成', icon: 'mdi:qrcode' }]
+const tools = [
+  { id: 'qrcode', label: '二维码生成', icon: 'mdi:qrcode' },
+  { id: 'install-app', label: '安装应用', icon: 'mdi:cellphone-arrow-down' }
+]
 const styles = [{ label: '普通', value: 'normal' }, { label: '艺术', value: 'art' }, { label: '动态', value: 'dynamic' }]
 const modes = [{ label: '文本/网址', value: 'text' }, { label: '文件', value: 'file' }]
 const qrStyle = ref('normal')
@@ -198,11 +261,11 @@ watch(mode, () => {
 })
 
 const pickFile = async () => {
-  const { filePaths } = await (window as any).electronAPI.showOpenDialog({ properties: ['openFile'] })
+  const { filePaths } = await api.showOpenDialog({ properties: ['openFile'] })
   if (!filePaths?.length) return
   const filePath = filePaths[0]
   selectedFile.value = { name: filePath.split('/').pop()!, path: filePath }
-  const res = await (window as any).electronAPI.startFileServer(filePath)
+  const res = await api.startFileServer(filePath)
   if (res?.url) {
     fileServerInfo.value = res
     await generateQr(res.url)
@@ -210,20 +273,20 @@ const pickFile = async () => {
 }
 
 const stopServer = async () => {
-  await (window as any).electronAPI.stopFileServer()
+  await api.stopFileServer()
   fileServerInfo.value = null
   selectedFile.value = null
   if (mode.value === 'file') qrDataUrl.value = ''
 }
 
 const saveQr = async () => {
-  const { filePath } = await (window as any).electronAPI.showSaveDialog({
+  const { filePath } = await api.showSaveDialog({
     defaultPath: 'qrcode.png',
     filters: [{ name: 'PNG', extensions: ['png'] }]
   })
   if (!filePath) return
   const base64 = qrDataUrl.value.replace(/^data:image\/png;base64,/, '')
-  await (window as any).electronAPI.saveFile(filePath, Uint8Array.from(atob(base64), c => c.charCodeAt(0)))
+  await api.saveFile(filePath, Uint8Array.from(atob(base64), c => c.charCodeAt(0)))
 }
 
 const copyContent = () => {
@@ -231,7 +294,81 @@ const copyContent = () => {
   if (content) navigator.clipboard.writeText(content)
 }
 
-onUnmounted(() => { stopServer() })
+onUnmounted(() => { stopServer(); api.offInstallProgress() })
+
+// === Install App ===
+const installDevices = ref<{ id: string; name: string; platform: string }[]>([])
+const installDeviceId = ref('')
+const installSource = ref<'local' | 'url'>('local')
+const installFilePath = ref('')
+const installUrl = ref('')
+const installStatus = ref<'' | 'downloading' | 'installing' | 'success' | 'error'>('')
+const installMessage = ref('')
+const installPercent = ref(0)
+
+const selectedPlatform = computed(() => installDevices.value.find(d => d.id === installDeviceId.value)?.platform || '')
+
+const canInstall = computed(() => {
+  if (!installDeviceId.value) return false
+  if (installSource.value === 'local' && !installFilePath.value) return false
+  if (installSource.value === 'url' && !installUrl.value.trim()) return false
+  return true
+})
+
+const installStatusIcon = computed(() => {
+  if (installStatus.value === 'success') return 'mdi:check-circle'
+  if (installStatus.value === 'error') return 'mdi:alert-circle'
+  return 'mdi:loading'
+})
+
+const installStatusColor = computed(() => {
+  if (installStatus.value === 'success') return 'text-green-600'
+  if (installStatus.value === 'error') return 'text-red-500'
+  return 'text-[hsl(var(--muted-foreground))]'
+})
+
+const refreshInstallDevices = async () => {
+  const devices = await api.getDevices()
+  installDevices.value = devices.filter((d: any) => d.status === 'online')
+  if (deviceStore.selectedDeviceId && installDevices.value.some(d => d.id === deviceStore.selectedDeviceId)) {
+    installDeviceId.value = deviceStore.selectedDeviceId
+  }
+}
+
+const onInstallDeviceChange = () => {
+  installStatus.value = ''
+}
+
+const pickInstallFile = async () => {
+  const { filePaths } = await api.showOpenDialog({
+    properties: ['openFile'],
+    filters: [{ name: '安装包', extensions: ['apk', 'ipa', 'hap'] }]
+  })
+  if (filePaths?.length) installFilePath.value = filePaths[0]
+}
+
+const doInstall = async () => {
+  installStatus.value = 'downloading'
+  installMessage.value = '准备中...'
+  installPercent.value = 0
+
+  const source = installSource.value === 'local'
+    ? { type: 'local', path: installFilePath.value }
+    : { type: 'url', url: installUrl.value.trim() }
+
+  await api.installApp(installDeviceId.value, selectedPlatform.value, source)
+}
+
+const handleInstallProgress = (_event: any, data: { status: string; message: string; percent: number }) => {
+  installStatus.value = data.status as any
+  installMessage.value = data.message
+  installPercent.value = data.percent
+}
+
+onMounted(() => {
+  refreshInstallDevices()
+  api.onInstallProgress(handleInstallProgress)
+})
 </script>
 
 <style scoped>

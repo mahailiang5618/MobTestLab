@@ -151,35 +151,6 @@
       </template>
     </div>
 
-    <!-- 事件标记时间线 -->
-    <div class="p-3 bg-[hsl(var(--card))] rounded-lg border border-[hsl(var(--border))]">
-      <div class="flex items-center justify-between mb-2">
-        <span class="text-sm font-medium">事件标记</span>
-        <el-button size="small" :disabled="!isCollecting" @click="addMarker">
-          <Icon icon="mdi:flag" class="w-3.5 h-3.5 mr-1" />
-          添加标记
-        </el-button>
-      </div>
-      <div class="flex items-center gap-2 overflow-x-auto py-2">
-        <div
-          v-for="(marker, index) in markers"
-          :key="index"
-          class="flex items-center gap-1.5 px-2 py-1 bg-[hsl(var(--secondary))] rounded text-xs whitespace-nowrap"
-        >
-          <span class="w-2 h-2 rounded-full" :class="marker.type === 'auto' ? 'bg-blue-400' : 'bg-[hsl(var(--warning))]'"></span>
-          <input
-            v-if="marker.editing"
-            class="bg-transparent border-b border-[hsl(var(--primary))] outline-none w-20 text-xs text-[hsl(var(--foreground))]"
-            placeholder="标记名称"
-            @keydown.enter="($event: any) => finishMarkerEdit(index, $event.target.value)"
-            @blur="($event: any) => finishMarkerEdit(index, $event.target.value)"
-          />
-          <span v-else class="text-[hsl(var(--foreground))]">{{ marker.label }}</span>
-          <span class="text-[hsl(var(--muted-foreground))]">{{ marker.time }}</span>
-        </div>
-      </div>
-    </div>
-
     <!-- 阈值设置对话框 -->
     <el-dialog v-model="showThresholdDialog" title="阈值设置" width="480px">
       <div class="space-y-4">
@@ -284,8 +255,6 @@ const temperatureHistory = shallowRef<number[]>(Array(HISTORY_SIZE).fill(0))
 const gpuHistory = shallowRef<number[]>(Array(HISTORY_SIZE).fill(0))
 const timestamps = shallowRef<string[]>(Array(HISTORY_SIZE).fill(''))
 const metricsHistory = ref<{ time: string; cpu: number; memory: number; fps: number; network: number; battery: number; temperature: number; gpu: number }[]>([])
-
-const markers = ref<{ label: string; time: string; type: string; editing?: boolean }[]>([])
 
 const isMetricEnabled = (key: string) => availableMetrics.value.find(m => m.key === key)?.enabled ?? false
 
@@ -440,10 +409,6 @@ const handlePerfData = (_event: any, payload: { deviceId: string; metric: any })
     gpu: m.gpu || 0
   })
 
-  if (m.cpu > thresholds.cpu.critical) {
-    markers.value.push({ label: `CPU ${m.cpu.toFixed(0)}%`, time: formatDuration(collectionDuration.value), type: 'auto' })
-  }
-
   requestAnimationFrame(updateChartsDom)
 }
 
@@ -479,7 +444,6 @@ const startCollection = async () => {
   gpuHistory.value = Array(HISTORY_SIZE).fill(0)
   timestamps.value = Array(HISTORY_SIZE).fill('')
   requestAnimationFrame(updateChartsDom)
-  markers.value = [{ label: '开始采集', time: '00:00', type: 'auto' }]
   durationTimer = window.setInterval(() => {
     if (!isPaused.value) collectionDuration.value++
   }, 1000)
@@ -496,18 +460,16 @@ const stopCollection = async () => {
   clearInterval(durationTimer)
 
   if (metricsHistory.value.length > 0 && device) {
-    const hasWarning = markers.value.some(m => m.type === 'auto')
     reportsStore.addReport({
       id: Date.now().toString(),
       name: `${selectedApp.value} 性能测试`,
       type: 'performance',
       device: device.name,
       app: selectedApp.value,
-      status: hasWarning ? 'warning' : 'passed',
+      status: 'passed',
       duration: formatDuration(collectionDuration.value),
       createdAt: new Date().toLocaleString('zh-CN'),
-      metrics: [...metricsHistory.value],
-      markers: [...markers.value]
+      metrics: [...metricsHistory.value]
     })
   }
 }
@@ -519,27 +481,6 @@ const toggleCollection = () => {
 
 const pauseCollection = () => {
   isPaused.value = !isPaused.value
-}
-
-const addMarker = () => {
-  if (!isCollecting.value) {
-    ElMessage.warning('请先开始采集')
-    return
-  }
-  markers.value.push({
-    label: '',
-    time: formatDuration(collectionDuration.value),
-    type: 'manual',
-    editing: true
-  })
-}
-
-const finishMarkerEdit = (index: number, value: string) => {
-  const m = markers.value[index]
-  if (m) {
-    m.label = value || '用户标记'
-    m.editing = false
-  }
 }
 
 const exportReport = async () => {

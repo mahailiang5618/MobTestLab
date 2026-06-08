@@ -60,5 +60,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
   stopFileServer: () => ipcRenderer.invoke('stop-file-server'),
   getLocalIp: () => ipcRenderer.invoke('get-local-ip'),
   showOpenDialog: (options) => ipcRenderer.invoke('show-open-dialog', options),
-  getMacInfo: () => ipcRenderer.invoke('get-mac-info')
+  getMacInfo: () => ipcRenderer.invoke('get-mac-info'),
+
+  // App installation
+  installApp: (deviceId, platform, source) => ipcRenderer.invoke('install-app', deviceId, platform, source),
+  onInstallProgress: (callback) => ipcRenderer.on('install-app-progress', callback),
+  offInstallProgress: () => ipcRenderer.removeAllListeners('install-app-progress')
 })

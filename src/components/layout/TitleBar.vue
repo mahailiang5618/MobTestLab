@@ -17,7 +17,7 @@
         <template #reference>
           <button class="flex items-center gap-1.5 px-2.5 py-1 rounded hover:bg-[hsl(var(--accent))] transition-colors relative">
             <Icon icon="mdi:cellphone" class="w-4 h-4 text-[hsl(var(--muted-foreground))]" />
-            <span class="text-xs text-[hsl(var(--muted-foreground))]">{{ selectedDevice?.name || '设备' }}</span>
+            <span class="text-xs text-[hsl(var(--muted-foreground))]">{{ selectedDevice?.name || (onlineCount > 0 ? '设备' : '暂无设备') }}</span>
             <Icon icon="mdi:chevron-down" class="w-3.5 h-3.5 text-[hsl(var(--muted-foreground))]" />
             <span
               v-if="onlineCount > 0"

@@ -445,6 +445,111 @@ ipcMain.handle('get-local-ip', () => {
   return getLocalIp()
 })
 
+ipcMain.handle('install-app', async (_event, deviceId, platform, source) => {
+  const os = require('os')
+  const path = require('path')
+  const https = require('https')
+  const http = require('http')
+
+  const sendProgress = (status, message, percent) => {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('install-app-progress', { status, message, percent })
+    }
+  }
+  let lastProgressTime = 0
+  const sendProgressThrottled = (status, message, percent) => {
+    const now = Date.now()
+    if (now - lastProgressTime < 200 && percent < 100) return
+    lastProgressTime = now
+    sendProgress(status, message, percent)
+  }
+
+  const doDownload = (url, dest) => {
+    return new Promise((resolve, reject) => {
+      const follow = (targetUrl, redirects) => {
+        if (redirects > 5) { reject(new Error('Too many redirects')); return }
+        const mod = targetUrl.startsWith('https') ? https : http
+        const req = mod.get(targetUrl, { headers: { 'User-Agent': 'MobTestLab/1.0' } }, (res) => {
+          if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
+            res.resume()
+            follow(res.headers.location, redirects + 1)
+            return
+          }
+          if (res.statusCode >= 400) {
+            res.resume()
+            reject(new Error(`HTTP ${res.statusCode}`))
+            return
+          }
+          const total = parseInt(res.headers['content-length'] || '0')
+          let downloaded = 0
+          const file = fs.createWriteStream(dest)
+          res.on('data', (chunk) => {
+            downloaded += chunk.length
+            if (total > 0) sendProgressThrottled('downloading', '正在下载安装包...', Math.round(downloaded / total * 100))
+          })
+          res.pipe(file)
+          file.on('finish', () => { file.close(); resolve() })
+          file.on('error', (e) => { fs.unlink(dest, () => {}); reject(e) })
+        })
+        req.on('error', reject)
+      }
+      follow(url, 0)
+    })
+  }
+
+  // 立即返回，后台执行下载和安装
+  const run = async () => {
+    let filePath = source.path
+    if (source.type === 'url') {
+      const url = source.url
+      const fileName = path.basename(new URL(url).pathname) || `install_${Date.now()}`
+      filePath = path.join(os.tmpdir(), fileName)
+      sendProgress('downloading', '正在下载安装包...', 0)
+      try {
+        await doDownload(url, filePath)
+      } catch (err) {
+        sendProgress('error', '下载失败: ' + err.message, 0)
+        return
+      }
+    }
+
+    sendProgress('installing', '正在安装应用...', 100)
+    let cmd, args
+    if (platform === 'android') {
+      cmd = getBinPath('adb')
+      args = ['-s', deviceId, 'install', '-r', filePath]
+    } else if (platform === 'ios') {
+      cmd = 'ideviceinstaller'
+      args = ['-u', deviceId, '-i', filePath]
+    } else if (platform === 'harmonyos') {
+      cmd = HDC_PATH
+      args = ['-t', deviceId, 'install', filePath]
+    } else {
+      sendProgress('error', '不支持的平台: ' + platform, 0)
+      return
+    }
+
+    const child = spawn(cmd, args, { timeout: 120000 })
+    let output = ''
+    child.stdout.on('data', (d) => { output += d.toString() })
+    child.stderr.on('data', (d) => { output += d.toString() })
+    child.on('close', (code) => {
+      if (source.type === 'url' && filePath) fs.unlink(filePath, () => {})
+      if (code === 0 && !output.toLowerCase().includes('failure')) {
+        sendProgress('success', '安装成功', 100)
+      } else {
+        sendProgress('error', output.trim().split('\n').pop() || '安装失败', 0)
+      }
+    })
+    child.on('error', (err) => {
+      sendProgress('error', '执行失败: ' + err.message, 0)
+    })
+  }
+
+  run()
+  return { success: true }
+})
+
 ipcMain.handle('get-mac-info', () => {
   const os = require('os')
   const totalMem = (os.totalmem() / 1073741824).toFixed(0)

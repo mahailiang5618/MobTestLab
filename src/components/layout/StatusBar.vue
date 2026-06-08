@@ -5,7 +5,7 @@
       <div class="flex items-center gap-2">
         <span class="w-2 h-2 rounded-full" :class="connectionStatusClass"></span>
         <span class="text-[hsl(var(--muted-foreground))]">
-          {{ onlineCount }} 台设备已连接
+          {{ onlineCount > 0 ? onlineCount + ' 台设备已连接' : '暂无设备' }}
         </span>
       </div>
       <div v-if="selectedDevice" class="flex items-center gap-1 text-[hsl(var(--muted-foreground))]">
@@ -30,12 +30,8 @@
       </div>
     </div>
 
-    <!-- 右侧：AI Token 用量 -->
+    <!-- 右侧：时间 -->
     <div class="flex items-center gap-4">
-      <div class="flex items-center gap-1.5 text-[hsl(var(--muted-foreground))]">
-        <Icon icon="mdi:robot" class="w-3.5 h-3.5" />
-        <span>Token: {{ tokenUsage.toLocaleString() }}</span>
-      </div>
       <div class="flex items-center gap-1.5 text-[hsl(var(--muted-foreground))]">
         <Icon icon="mdi:clock-outline" class="w-3.5 h-3.5" />
         <span>{{ currentTime }}</span>
@@ -58,7 +54,6 @@ const { selectedDevice, onlineDevices } = storeToRefs(deviceStore)
 const { isCollecting } = storeToRefs(performanceStore)
 
 const currentTime = ref('')
-const tokenUsage = ref(12580)
 
 // Mock performance data
 const currentCpu = ref(45)
