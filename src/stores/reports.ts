@@ -15,6 +15,8 @@ export interface PerfReport {
   htmlContent?: string
 }
 
+const api = (window as any).electronAPI
+
 export const useReportsStore = defineStore('reports', () => {
   const reports = ref<PerfReport[]>([])
 
@@ -25,13 +27,23 @@ export const useReportsStore = defineStore('reports', () => {
     warnings: reports.value.filter(r => r.status === 'warning').length
   }))
 
+  const loadReports = async () => {
+    if (api?.getReports) {
+      reports.value = await api.getReports()
+    }
+  }
+
   const addReport = (report: PerfReport) => {
     reports.value.unshift(report)
+    api?.saveReport(report)
   }
 
   const deleteReport = (id: string) => {
     reports.value = reports.value.filter(r => r.id !== id)
+    api?.deleteReportFromDb(id)
   }
 
-  return { reports, stats, addReport, deleteReport }
+  loadReports()
+
+  return { reports, stats, addReport, deleteReport, loadReports }
 })

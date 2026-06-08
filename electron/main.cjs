@@ -12,6 +12,7 @@ const { FileServer, getLocalIp } = require('./file-server.cjs')
 const { ScrcpyClient } = require('./scrcpy-client.cjs')
 const { AndroidPerfCollector } = require('./android-perf-collector.cjs')
 const { AutomationRunner } = require('./automation-runner.cjs')
+const { initDb, getAllReports, insertReport, deleteReport: dbDeleteReport } = require('./db.cjs')
 let IosMirrorClient
 try { IosMirrorClient = require('./ios-mirror-client.cjs').IosMirrorClient } catch (e) { log('ios-mirror load error: ' + e.message) }
 
@@ -152,9 +153,7 @@ function getAdbDevices() {
 }
 
 const createWindow = () => {
-  const iconPath = isDev
-    ? path.join(__dirname, '../build/icon.icns')
-    : path.join(process.resourcesPath, 'icon.icns')
+  const iconPath = path.join(__dirname, isDev ? '../build/icon.icns' : '../build/icon.icns')
 
   mainWindow = new BrowserWindow({
     width: 1440,
@@ -433,6 +432,11 @@ ipcMain.handle('delete-script', (_event, name) => {
   try { fs.unlinkSync(path.join(SCRIPTS_DIR, `${name}.js`)); return { success: true } } catch { return { success: false } }
 })
 
+// Reports DB
+ipcMain.handle('get-reports', () => getAllReports())
+ipcMain.handle('save-report', (_event, report) => { insertReport(report); return { success: true } })
+ipcMain.handle('delete-report', (_event, id) => { dbDeleteReport(id); return { success: true } })
+
 // File server for QR tools
 const fileServer = new FileServer()
 
@@ -611,8 +615,9 @@ ipcMain.handle('get-mac-info', () => {
   ]
 })
 
-app.whenReady().then(() => {
+app.whenReady().then(async () => {
   log('app ready, isDev: ' + isDev + ', isPackaged: ' + app.isPackaged)
+  await initDb()
 
   const menuTemplate = [
     {

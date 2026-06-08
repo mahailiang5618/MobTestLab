@@ -62,6 +62,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
   showOpenDialog: (options) => ipcRenderer.invoke('show-open-dialog', options),
   getMacInfo: () => ipcRenderer.invoke('get-mac-info'),
 
+  // Reports DB
+  getReports: () => ipcRenderer.invoke('get-reports'),
+  saveReport: (report) => ipcRenderer.invoke('save-report', report),
+  deleteReportFromDb: (id) => ipcRenderer.invoke('delete-report', id),
+
   // App installation
   installApp: (deviceId, platform, source) => ipcRenderer.invoke('install-app', deviceId, platform, source),
   onInstallProgress: (callback) => ipcRenderer.on('install-app-progress', callback),

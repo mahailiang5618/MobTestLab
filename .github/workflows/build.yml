@@ -7,6 +7,9 @@ on:
 jobs:
   build-mac:
     runs-on: macos-latest
+    strategy:
+      matrix:
+        arch: [arm64, x64]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -14,16 +17,21 @@ jobs:
           node-version: 20
           cache: npm
       - run: npm ci
-      - run: npm run electron:build
+      - id: version
+        run: echo "ver=$(node -p \"require('./package.json').version\")" >> $GITHUB_OUTPUT
+      - run: npm run electron:build -- --mac --${{ matrix.arch }}
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       - uses: actions/upload-artifact@v4
         with:
-          name: MobTestLab-mac.dmg
+          name: MobTestLab-${{ steps.version.outputs.ver }}-mac-${{ matrix.arch }}.dmg
           path: release/*.dmg
 
   build-windows:
     runs-on: windows-latest
+    strategy:
+      matrix:
+        arch: [x64, ia32]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -31,10 +39,12 @@ jobs:
           node-version: 20
           cache: npm
       - run: npm ci
-      - run: npm run electron:build -- --win --ia32 --x64
+      - id: version
+        run: echo "ver=$(node -p \"require('./package.json').version\")" >> $env:GITHUB_OUTPUT
+      - run: npm run electron:build -- --win --${{ matrix.arch }}
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       - uses: actions/upload-artifact@v4
         with:
-          name: MobTestLab-win.exe
+          name: MobTestLab-${{ steps.version.outputs.ver }}-win-${{ matrix.arch }}.exe
           path: release/*.exe

@@ -13,7 +13,7 @@
     <!-- 右侧操作按钮 -->
     <div class="flex items-center gap-1 pr-3 app-no-drag">
       <!-- 设备下拉 -->
-      <el-popover placement="bottom-end" :width="320" trigger="click">
+      <el-popover placement="bottom-end" :width="400" trigger="click">
         <template #reference>
           <button class="flex items-center gap-1.5 px-2.5 py-1 rounded hover:bg-[hsl(var(--accent))] transition-colors relative">
             <Icon icon="mdi:cellphone" class="w-4 h-4 text-[hsl(var(--muted-foreground))]" />
