@@ -1,6 +1,6 @@
 {
   "name": "mobtestlab",
-  "version": "1.2.1",
+  "version": "2.0.0",
   "description": "一站式移动端测试工作台",
   "author": "mahailiang",
   "main": "electron/main.cjs",
@@ -24,10 +24,15 @@
         "filter": [
           "**/*"
         ]
+      },
+      {
+        "from": "build/icon.icns",
+        "to": "icon.icns"
       }
     ],
     "mac": {
       "category": "public.app-category.developer-tools",
+      "icon": "build/icon.icns",
       "target": [
         {
           "target": "dmg",
@@ -43,6 +48,7 @@
       "artifactName": "${productName}-${version}-mac-${arch}.dmg"
     },
     "win": {
+      "icon": "build/icon.png",
       "target": [
         {
           "target": "nsis",

@@ -19,7 +19,7 @@
                 : 'text-[hsl(var(--muted-foreground))] hover:bg-[hsl(var(--accent))] hover:text-[hsl(var(--foreground))]'
             ]"
           >
-            <Icon icon="mdi:view-dashboard" class="w-5 h-5" />
+            <img src="/icon.png" class="w-8 h-8 rounded" />
             <span class="text-[10px] leading-none">工作台</span>
           </button>
         </router-link>

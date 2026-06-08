@@ -152,6 +152,10 @@ function getAdbDevices() {
 }
 
 const createWindow = () => {
+  const iconPath = isDev
+    ? path.join(__dirname, '../build/icon.icns')
+    : path.join(process.resourcesPath, 'icon.icns')
+
   mainWindow = new BrowserWindow({
     width: 1440,
     height: 900,
@@ -159,6 +163,7 @@ const createWindow = () => {
     minHeight: 720,
     frame: false,
     titleBarStyle: 'hiddenInset',
+    icon: iconPath,
     webPreferences: {
       nodeIntegration: false,
       contextIsolation: true,

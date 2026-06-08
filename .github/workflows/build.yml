@@ -19,7 +19,7 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       - uses: actions/upload-artifact@v4
         with:
-          name: mac-installers
+          name: MobTestLab-mac.dmg
           path: release/*.dmg
 
   build-windows:
@@ -36,5 +36,5 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       - uses: actions/upload-artifact@v4
         with:
-          name: windows-installers
+          name: MobTestLab-win.exe
           path: release/*.exe
