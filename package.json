@@ -1,6 +1,6 @@
 {
   "name": "mobtestlab",
-  "version": "2.0.3",
+  "version": "2.0.4",
   "description": "一站式移动端测试工作台",
   "author": "mahailiang",
   "main": "electron/main.cjs",
@@ -36,7 +36,8 @@
         {
           "target": "dmg",
           "arch": [
-            "x64"
+            "x64",
+            "arm64"
           ]
         }
       ]
