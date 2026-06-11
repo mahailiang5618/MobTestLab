@@ -19,12 +19,15 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // Automation
   runAutomation: (params) => ipcRenderer.invoke('run-automation', params),
   stopAutomation: () => ipcRenderer.invoke('stop-automation'),
+  captureUiModel: (deviceId) => ipcRenderer.invoke('capture-ui-model', deviceId),
+  runAirtestAutomation: (params) => ipcRenderer.invoke('run-airtest-automation', params),
+  stopAirtestAutomation: () => ipcRenderer.invoke('stop-airtest-automation'),
   onAutomationLog: (callback) => ipcRenderer.on('automation-log', callback),
   offAutomationLog: () => ipcRenderer.removeAllListeners('automation-log'),
   getAiConfig: () => ipcRenderer.invoke('get-ai-config'),
   saveAiConfig: (config) => ipcRenderer.invoke('save-ai-config', config),
   getScripts: () => ipcRenderer.invoke('get-scripts'),
-  saveAutomationScript: (name, content) => ipcRenderer.invoke('save-automation-script', name, content),
+  saveAutomationScript: (name, content, options) => ipcRenderer.invoke('save-automation-script', name, content, options),
   deleteScript: (name) => ipcRenderer.invoke('delete-script', name),
 
   // Input forwarding

@@ -106,6 +106,7 @@ const navItems = [
   { label: '投屏', path: '/mirror', icon: 'mdi:cellphone-screenshot' },
   { label: '性能', path: '/performance', icon: 'mdi:chart-line' },
   { label: '自动化', path: '/automation', icon: 'mdi:robot' },
+  { label: '速度', path: '/speed-test', icon: 'mdi:speedometer' },
   { label: '报告', path: '/reports', icon: 'mdi:file-document-outline' },
   { label: '助手', path: '/assistant', icon: 'mdi:chat-outline' },
   { label: '工具', path: '/tools', icon: 'mdi:toolbox-outline' }

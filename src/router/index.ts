@@ -33,6 +33,12 @@ const routes: RouteRecordRaw[] = [
         meta: { title: '自动化', icon: 'mdi:robot' }
       },
       {
+        path: 'speed-test',
+        name: 'SpeedTest',
+        component: () => import('@/views/SpeedTestView.vue'),
+        meta: { title: '速度评测', icon: 'mdi:speedometer' }
+      },
+      {
         path: 'reports',
         name: 'Reports',
         component: () => import('@/views/ReportsView.vue'),

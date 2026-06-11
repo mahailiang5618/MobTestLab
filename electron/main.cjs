@@ -12,6 +12,8 @@ const { FileServer, getLocalIp } = require('./file-server.cjs')
 const { ScrcpyClient } = require('./scrcpy-client.cjs')
 const { AndroidPerfCollector } = require('./android-perf-collector.cjs')
 const { AutomationRunner } = require('./automation-runner.cjs')
+const { AirtestRunner } = require('./airtest-runner.cjs')
+const { captureUiModel } = require('./ui-model-service.cjs')
 const { initDb, getAllReports, insertReport, deleteReport: dbDeleteReport } = require('./db.cjs')
 let IosMirrorClient
 try { IosMirrorClient = require('./ios-mirror-client.cjs').IosMirrorClient } catch (e) { log('ios-mirror load error: ' + e.message) }
@@ -25,6 +27,7 @@ let mainWindow
 const mirrorProcesses = new Map()
 const perfCollectors = new Map()
 const automationRunner = new AutomationRunner()
+const airtestRunner = new AirtestRunner()
 
 const MOBTESTLAB_DIR = path.join(require('os').homedir(), '.mobtestlab')
 const SCRIPTS_DIR = path.join(MOBTESTLAB_DIR, 'scripts')
@@ -399,6 +402,30 @@ ipcMain.handle('run-automation', (_event, params) => {
 
 ipcMain.handle('stop-automation', () => {
   automationRunner.stop()
+  airtestRunner.stop()
+  return { success: true }
+})
+
+ipcMain.handle('capture-ui-model', async (_event, deviceId) => {
+  try {
+    return captureUiModel(deviceId)
+  } catch (err) {
+    return { success: false, error: err.message }
+  }
+})
+
+ipcMain.handle('run-airtest-automation', (_event, params) => {
+  log('run-airtest-automation called, deviceId: ' + params.deviceId)
+  return airtestRunner.run(params, (msg) => {
+    log('airtest msg: ' + JSON.stringify(msg))
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('automation-log', msg)
+    }
+  })
+})
+
+ipcMain.handle('stop-airtest-automation', () => {
+  airtestRunner.stop()
   return { success: true }
 })
 
@@ -415,21 +442,36 @@ ipcMain.handle('save-ai-config', (_event, config) => {
 ipcMain.handle('get-scripts', () => {
   fs.mkdirSync(SCRIPTS_DIR, { recursive: true })
   try {
-    return fs.readdirSync(SCRIPTS_DIR).filter(f => f.endsWith('.js')).map(f => ({
-      name: f.replace('.js', ''),
+    return fs.readdirSync(SCRIPTS_DIR).filter(f => f.endsWith('.js') || f.endsWith('.py')).map(f => ({
+      name: f.replace(/\.(js|py)$/, ''),
+      extension: f.endsWith('.py') ? 'py' : 'js',
       content: fs.readFileSync(path.join(SCRIPTS_DIR, f), 'utf-8')
     }))
   } catch { return [] }
 })
 
-ipcMain.handle('save-automation-script', (_event, name, content) => {
+ipcMain.handle('save-automation-script', (_event, name, content, options = {}) => {
   fs.mkdirSync(SCRIPTS_DIR, { recursive: true })
-  fs.writeFileSync(path.join(SCRIPTS_DIR, `${name}.js`), content)
+  const safeName = String(name).replace(/[\\/]/g, '_')
+  const extension = options.extension === 'py' ? 'py' : 'js'
+  for (const ext of ['js', 'py']) {
+    const oldPath = path.join(SCRIPTS_DIR, `${safeName}.${ext}`)
+    if (ext !== extension && fs.existsSync(oldPath)) fs.unlinkSync(oldPath)
+  }
+  fs.writeFileSync(path.join(SCRIPTS_DIR, `${safeName}.${extension}`), content)
   return { success: true }
 })
 
 ipcMain.handle('delete-script', (_event, name) => {
-  try { fs.unlinkSync(path.join(SCRIPTS_DIR, `${name}.js`)); return { success: true } } catch { return { success: false } }
+  const safeName = String(name).replace(/[\\/]/g, '_')
+  let deleted = false
+  for (const ext of ['js', 'py']) {
+    try {
+      fs.unlinkSync(path.join(SCRIPTS_DIR, `${safeName}.${ext}`))
+      deleted = true
+    } catch {}
+  }
+  return { success: deleted }
 })
 
 // Reports DB
